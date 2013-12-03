@@ -3,12 +3,13 @@
 TESS_LANG = jpn
 TESS_FONT = IPAGothic
 TESS_DATA = tessdata
+TESS_DAT2 = data
 
 TESS_EXP0 = $(TESS_LANG).$(TESS_FONT).exp0
 
 #
 
-all: $(TESS_LANG).traineddata
+all: combine
 
 clean:
 	rm -f \
@@ -25,9 +26,16 @@ clean:
 		inttemp \
 		$(TESS_LANG).inttemp \
 		normproto \
-		$(TESS_LANG).normproto
+		$(TESS_LANG).normproto\
+		frequent_words_list \
+		words_list \
+		jpn.config \
+		jpn.font_properties \
+		jpn.freq-dawg \
+		jpn.word-dawg \
+		jpn.unicharambigs
 
-generate: $(TESS_EXP0).tiff
+combine: $(TESS_LANG).traineddata
 
 #TODO: incomplete
 uncombine:
@@ -39,10 +47,37 @@ uncombine:
 		$(TESS_LANG).freq-dawg" \
 		$(TESS_LANG).frequent_words_list
 
+generate: $(TESS_EXP0).tiff
+
 #
 
 $(TESS_EXP0).tiff $(TESS_EXP0).box:
 	./generate_img.py
+
+#
+
+frequent_words_list: $(TESS_DAT2)/wiktionary
+	cp $(TESS_DAT2)/wiktionary frequent_words_list
+
+words_list: \
+		$(TESS_DAT2)/wiktionary \
+		$(TESS_DAT2)/internet-jp.num \
+		$(TESS_DAT2)/internet-jp-forms.num
+	cat \
+		$(TESS_DAT2)/wiktionary \
+		$(TESS_DAT2)/internet-jp.num \
+		$(TESS_DAT2)/internet-jp-forms.num \
+		| uniq \
+		> words_list
+
+$(TESS_LANG).config: $(TESS_DATA)/$(TESS_LANG).config
+	cp $(TESS_DATA)/$(TESS_LANG).config $(TESS_LANG).config
+
+$(TESS_LANG).font_properties: $(TESS_DATA)/$(TESS_LANG).font_properties
+	cp $(TESS_DATA)/$(TESS_LANG).font_properties $(TESS_LANG).font_properties
+
+$(TESS_LANG).unicharambigs: $(TESS_DATA)/$(TESS_LANG).unicharambigs
+	cp $(TESS_DATA)/$(TESS_LANG).unicharambigs $(TESS_LANG).unicharambigs
 
 #
 
@@ -51,7 +86,12 @@ $(TESS_LANG).traineddata: \
 		$(TESS_LANG).shapetable \
 		$(TESS_LANG).pffmtable \
 		$(TESS_LANG).inttemp \
-		$(TESS_LANG).normproto
+		$(TESS_LANG).normproto \
+		$(TESS_LANG).freq-dawg \
+		$(TESS_LANG).word-dawg \
+		$(TESS_LANG).config \
+		$(TESS_LANG).font_properties \
+		$(TESS_LANG).unicharambigs
 	combine_tessdata $(TESS_LANG).
 
 #TODO: set up config so we can chose whether or not generate this file
@@ -73,15 +113,18 @@ unicharset: $(TESS_EXP0).box
 	unicharset_extractor \
 		$(TESS_EXP0).box 
 
-shapetable: unicharset $(TESS_EXP0).tr
+shapetable: $(TESS_LANG).font_properties unicharset $(TESS_EXP0).tr
 	shapeclustering \
-		-F $(TESS_DATA)/$(TESS_LANG).font_properties \
+		-F $(TESS_LANG).font_properties \
 		-U unicharset \
 		$(TESS_EXP0).tr 
 
-$(TESS_LANG).unicharset inttemp pffmtable: unicharset $(TESS_EXP0).tr shapetable
+$(TESS_LANG).unicharset inttemp pffmtable: \
+		$(TESS_LANG).font_properties \
+		unicharset $(TESS_EXP0).tr \
+		shapetable
 	mftraining \
-		-F $(TESS_DATA)/$(TESS_LANG).font_properties \
+		-F $(TESS_LANG).font_properties \
 		-U unicharset \
 		-O $(TESS_LANG).unicharset \
 		$(TESS_EXP0).tr
