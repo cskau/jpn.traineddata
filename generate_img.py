@@ -17,8 +17,26 @@ FONT_DIR='/usr/share/fonts/'
 
 IMAGE_EXT='png'
 
+FONTS = [
+  ('OTF/ipag.ttf', 'IPAGothic'),
+  ('OTF/ipamp.ttf', 'IPAPMincho'),
+  ('TTF/togoshi-gothic.ttf', 'TogoshiGothic'),
+  ('TTF/togoshi-mincho.ttf', 'TogoshiMincho'),
+  ('TTF/togoshi-monago.ttf', 'TogoshiMonago'),
+  ('TTF/togoshi-mono.ttf', 'TogoshiMono'),
+  ('TTF/umeplus-gothic.ttf', 'UmeplusGothic'),
+  ('TTF/kiloji.ttf', 'Kiloji'),
+  # NOTE: the below seem to render wrong for some or all content
+  # ('TTF/dejima-mincho.ttf', 'DejimaMincho'),
+  # ('TTF/sazanami-gothic.ttf', 'SazanamiGothic'),
+  # ('TTF/sazanami-mincho.ttf', 'SazanamiMincho'),
+  # ('TTF/DroidSansJapanese.ttf', 'DroidSansJapanese'),
+]
 
-def draw_text(lang, font_name, exp, font_file, txt, margin=10):
+MARGIN=4
+
+
+def draw_text(lang, font_name, exp, font_file, txt, margin=MARGIN):
   font = ImageFont.truetype(FONT_DIR + font_file, 18)
   ff = fontforge.open(FONT_DIR + font_file)
 
@@ -80,22 +98,6 @@ def draw_text(lang, font_name, exp, font_file, txt, margin=10):
 
 
 if __name__ == '__main__':
-  fonts = [
-    ('OTF/ipag.ttf', 'IPAGothic'),
-    ('OTF/ipamp.ttf', 'IPAPMincho'),
-    ('TTF/togoshi-gothic.ttf', 'TogoshiGothic'),
-    ('TTF/togoshi-mincho.ttf', 'TogoshiMincho'),
-    ('TTF/togoshi-monago.ttf', 'TogoshiMonago'),
-    ('TTF/togoshi-mono.ttf', 'TogoshiMono'),
-    ('TTF/umeplus-gothic.ttf', 'UmeplusGothic'),
-    ('TTF/kiloji.ttf', 'Kiloji'),
-    # NOTE: the below seem to render wrong for some or all content
-    # ('TTF/dejima-mincho.ttf', 'DejimaMincho'),
-    # ('TTF/sazanami-gothic.ttf', 'SazanamiGothic'),
-    # ('TTF/sazanami-mincho.ttf', 'SazanamiMincho'),
-    # ('TTF/DroidSansJapanese.ttf', 'DroidSansJapanese'),
-  ]
-
   i = 0
   texts = []
   for (dirpath, dirnames, filenames) in walk(DOCS_DIR):
@@ -104,6 +106,6 @@ if __name__ == '__main__':
         text_content = text_file.read().decode('utf-8')
         for line in text_content.splitlines():
           if line:
-            for font_file, font_name in fonts:
+            for font_file, font_name in FONTS:
               draw_text('jpn', font_name, i, font_file, line)
             i += 1
