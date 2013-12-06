@@ -2,7 +2,7 @@
 # coding: UTF-8
 
 
-from os import walk, path
+from os import walk, path, makedirs
 
 import PIL
 from PIL import ImageFont
@@ -36,7 +36,13 @@ FONTS = [
 MARGIN=4
 
 
-def draw_text(lang, font_name, exp, font_file, txt, margin=MARGIN):
+def mkdirs_silent(path):
+  try:
+    makedirs(path)
+  except Exception, e:
+    pass
+
+def draw_text(dirpath, lang, font_name, exp, font_file, txt, margin=MARGIN):
   font = ImageFont.truetype(FONT_DIR + font_file, 18)
   ff = fontforge.open(FONT_DIR + font_file)
 
@@ -54,7 +60,6 @@ def draw_text(lang, font_name, exp, font_file, txt, margin=MARGIN):
 
   image_width += 2 * margin
   image_height += margin
-
 
   img = Image.new(
       "RGBA",
@@ -86,11 +91,16 @@ def draw_text(lang, font_name, exp, font_file, txt, margin=MARGIN):
     x = margin
     y += line_height + margin
 
-  img.save('train/{}.{}.exp{}.{}'.format(lang, font_name, exp, IMAGE_EXT))
+  img_dir = path.join('train', dirpath)
+  img_filename = '{}.{}.exp{}.{}'.format(lang, font_name, exp, IMAGE_EXT)
+  mkdirs_silent(img_dir)
+  img.save(path.join(img_dir, img_filename))
 
   if boxes:
-    box_file_path = 'train/{}.{}.exp{}.box'.format(lang, font_name, exp)
-    with open(box_file_path, 'w+') as box_file:
+    box_dir = path.join('train', dirpath)
+    box_filename = '{}.{}.exp{}.box'.format(lang, font_name, exp)
+    mkdirs_silent(box_dir)
+    with open(path.join(box_dir, box_filename), 'w+') as box_file:
       for c, x, y, x2, y2 in boxes:
         box_file.write(
             '{} {} {} {} {} 0\n'.format(c.encode('utf-8'), x, y, x2, y2)
@@ -107,5 +117,5 @@ if __name__ == '__main__':
         for line in text_content.splitlines():
           if line:
             for font_file, font_name in FONTS:
-              draw_text('jpn', font_name, i, font_file, line)
+              draw_text(dirpath, 'jpn', font_name, i, font_file, line)
             i += 1
