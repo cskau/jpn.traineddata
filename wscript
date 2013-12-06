@@ -16,6 +16,7 @@ def configure(ctx):
   ctx.env.CNTRAINING = 'cntraining'
   #
   ctx.env.MODEL_LANG = 'jpn'
+  ctx.env.IMAGE_EXT = 'png'
   ctx.env.EXP_FONTS = [
     'IPAGothic',
     'IPAPMincho',
@@ -31,31 +32,36 @@ def configure(ctx):
 def build(ctx):
   copy_in_config(ctx)
   extract_unicharset(ctx)
-  cat_per_font_trs(ctx)
   train_box(ctx)
+  cat_per_font_trs(ctx)
   train_mf(ctx)
   train_cn(ctx)
   make_normproto_lang_specific(ctx)
   make_inttemp_lang_specific(ctx)
   make_pffmtable_lang_specific(ctx)
   combine(ctx)
-  test(ctx)
 
 
 def train_box(ctx):
   for font in ctx.env.EXP_FONTS:
-    image_glob = 'train/{}.{}.exp*.png'.format(ctx.env.MODEL_LANG, font)
+    image_glob = 'train/documents/*/{}.{}.exp*.{}'.format(
+        ctx.env.MODEL_LANG,
+        font,
+        ctx.env.IMAGE_EXT,
+        )
     images = ctx.path.ant_glob(image_glob)
     for image in images:
       # TODO: we should check if the .box files exist too
       image_path = image.bldpath()
       exp_path = '.'.join(image_path.split('.')[:-1])
       tr_path = '{}.tr'.format(exp_path)
-      rule = '${{TESSERACT}} ${{SRC}} {} box.train.stderr'.format(exp_path)
+      # NOTE: always touch so we avoid a missing target if tesseract gives
+      #  'Empty page!!' error.
+      rule = 'touch "${{TGT}}" ; ${{TESSERACT}} "${{SRC}}" "{}" box.train.stderr'.format(exp_path)
       ctx(
           rule=rule,
-          source=image_path,
-          target=tr_path,
+          source=image,
+          target=[tr_path],
           )
 
 
@@ -67,28 +73,45 @@ In any case, the input tr files to mftraining must each contain
 a single font.
 """
 def cat_per_font_trs(ctx):
-  trs = []
   for font in ctx.env.EXP_FONTS:
-    # TODO: use terminal glob directly in rule? (don't use source)
-    tr_glob = 'train/{}.{}.exp*.tr'.format(ctx.env.MODEL_LANG, font)
+    tr_glob = '../train/documents/*/{}.{}.exp*.tr'.format(
+        ctx.env.MODEL_LANG,
+        font,
+        )
+    image_glob = 'train/documents/*/{}.{}.exp*.{}'.format(
+        ctx.env.MODEL_LANG,
+        font,
+        ctx.env.IMAGE_EXT,
+        )
+    trs = [
+      '{}.tr'.format('.'.join(image.bldpath().split('.')[:-1]))
+      for image in ctx.path.ant_glob(image_glob)
+    ]
     ctx(
-        rule='cat ${SRC} > ${TGT}',
-        source=ctx.path.ant_glob(tr_glob),
+        rule='cat {} > ${{TGT}}'.format(tr_glob),
+        source=trs,
         target='train/{}.{}.exp.tr'.format(ctx.env.MODEL_LANG, font)
         )
 
 
 # unicharset_extractor lang.font.exp0.box [lang.font.exp1.box ...]
 def extract_unicharset(ctx):
+  globs = []
   boxes = []
   for font in ctx.env.EXP_FONTS:
-    box_glob = 'train/{}.{}.exp*.box'.format(ctx.env.MODEL_LANG, font)
+    box_glob = 'train/documents/*/{}.{}.exp*.box'.format(
+        ctx.env.MODEL_LANG,
+        font,
+        )
+    globs.append('../' + box_glob)
     boxes.extend(ctx.path.ant_glob(box_glob))
   # TODO: we probably need to create a meta-box file since with large
   #  training sets the command line would be /very/ long
   ctx(
-      rule='${UNICHARSET_EXTRACTOR} ${SRC}',
+      # rule='${UNICHARSET_EXTRACTOR} ${SRC}',
+      rule='${{UNICHARSET_EXTRACTOR}} {}'.format(' '.join(globs)),
       source=boxes,
+      # source=globs,
       target='unicharset'
       )
 
