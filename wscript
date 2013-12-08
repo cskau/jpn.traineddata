@@ -1,19 +1,80 @@
 #!/usr/bin/env python
 # coding: UTF-8
 
+
 import os
 
+from waflib import TaskGen
+from waflib.Task import Task
+
+
+### waf tools
+
+# TaskGen.declare_chain(
+#     name='touchtr',
+#     rule = 'touch ${TGT}',
+#     ext_in = ['.png', '.jpg', 'jpeg', '.tif', '.tiff'],
+#     # ext_out = '.tr',
+#     shell = False,
+#     reentrant = True,
+#     )
+
+# TaskGen.declare_chain(
+#     rule = '${TESSERACT} ${SRC} ${TGT[0].bld_base()} box.train.stderr',
+#     ext_in = ['.png', '.jpg', 'jpeg', '.tif', '.tiff'],
+#     ext_out = '.tr',
+#     shell = False,
+#     # reentrant = False,
+#     )
+
+# TaskGen.declare_chain(
+#     rule = (
+#         '${TESSERACT} "${SRC}" "${SRC[0].get_bld().bld_base()}" box.train.stderr ' +
+#             # HACK: force waf to create folder hierarchy
+#             ' #${SRC[0].get_bld().parent.mkdir()}'
+#         ),
+#     ext_in = ['.png', '.jpg', 'jpeg', '.tif', '.tiff'],
+#     # NOTE: no targets are set since tesseract might fail with: "Empty page!!"
+#     shell = True,
+#     )
+
+def box_scanner(task):
+  node = task.inputs[0]
+  # node.get_bld().parent.mkdir()
+  dep = node.parent.find_resource(node.name.replace('.png', '.box'))
+  if not dep:
+    raise ValueError("Could not find the .box file for %r" % node)
+  return ([dep], [])
+
+TaskGen.declare_chain(
+    name='trs',
+    rule = '${TESSERACT} ${SRC} ${TGT[0].bld_base()} box.train.stderr',
+    ext_in = ['.png', '.jpg', 'jpeg', '.tif', '.tiff'],
+    ext_out = ['.tr'],
+    scan = box_scanner,
+    )
+
+
+### build script
 
 def options(ctx):
   pass
 
 
 def configure(ctx):
-  ctx.env.TESSERACT = 'tesseract'
-  ctx.env.COMBINE_TESSERACT = 'combine_tessdata'
-  ctx.env.UNICHARSET_EXTRACTOR = 'unicharset_extractor'
-  ctx.env.MFTRAINING = 'mftraining'
-  ctx.env.CNTRAINING = 'cntraining'
+  ctx.find_program('mv', var='MOVE')
+  ctx.find_program('cp', var='COPY')
+  ctx.find_program('cat', var='CAT')
+  ctx.find_program('tesseract', var='TESSERACT')
+  ctx.find_program('combine_tessdata', var='COMBINE_TESSERACT')
+  ctx.find_program('unicharset_extractor', var='UNICHARSET_EXTRACTOR')
+  ctx.find_program('mftraining', var='MFTRAINING')
+  ctx.find_program('cntraining', var='CNTRAINING')
+  ctx.find_program(
+      'meta_box.py',
+      var='META_BOX',
+      path_list=[ctx.path.abspath()],
+      )
   #
   ctx.env.MODEL_LANG = 'jpn'
   ctx.env.IMAGE_EXT = 'png'
@@ -31,38 +92,68 @@ def configure(ctx):
 
 def build(ctx):
   copy_in_config(ctx)
+
+  cat_meta_box(ctx)
   extract_unicharset(ctx)
-  train_box(ctx)
-  cat_per_font_trs(ctx)
-  train_mf(ctx)
-  train_cn(ctx)
-  make_normproto_lang_specific(ctx)
-  make_inttemp_lang_specific(ctx)
-  make_pffmtable_lang_specific(ctx)
-  combine(ctx)
 
-
-def train_box(ctx):
   for font in ctx.env.EXP_FONTS:
     image_glob = 'train/documents/*/{}.{}.exp*.{}'.format(
         ctx.env.MODEL_LANG,
         font,
         ctx.env.IMAGE_EXT,
         )
-    images = ctx.path.ant_glob(image_glob)
-    for image in images:
-      # TODO: we should check if the .box files exist too
-      image_path = image.bldpath()
-      exp_path = '.'.join(image_path.split('.')[:-1])
-      tr_path = '{}.tr'.format(exp_path)
-      # NOTE: always touch so we avoid a missing target if tesseract gives
-      #  'Empty page!!' error.
-      rule = 'touch "${{TGT}}" ; ${{TESSERACT}} "${{SRC}}" "{}" box.train.stderr'.format(exp_path)
-      ctx(
-          rule=rule,
-          source=image,
-          target=[tr_path],
-          )
+    ctx(source=ctx.path.ant_glob(image_glob))
+  cat_per_font_trs(ctx)
+
+  train_mf(ctx)
+
+  train_cn(ctx)
+
+  make_normproto_lang_specific(ctx)
+  make_inttemp_lang_specific(ctx)
+  make_pffmtable_lang_specific(ctx)
+
+  combine(ctx)
+
+
+def copy_in_config(ctx):
+  lang = ctx.env.MODEL_LANG
+  ctx(
+      rule='${COPY} ${SRC} ${TGT}',
+      source=ctx.path.make_node(
+          'tessdata/{}.config'.format(lang)
+          ),
+      target=ctx.path.get_bld().make_node(
+          '{}.config'.format(lang)
+          ),
+      )
+  ctx(
+      rule='${COPY} ${SRC} ${TGT}',
+      source=ctx.path.make_node(
+          'tessdata/{}.font_properties'.format(lang)
+          ),
+      target=ctx.path.get_bld().make_node(
+          '{}.font_properties'.format(lang)
+          ),
+      )
+  ctx(
+      rule='${COPY} ${SRC} ${TGT}',
+      source=ctx.path.make_node(
+          'tessdata/{}.punc-wordlist'.format(lang)
+          ),
+      target=ctx.path.get_bld().make_node(
+          '{}.punc-wordlist'.format(lang)
+          ),
+      )
+  ctx(
+      rule='${COPY} ${SRC} ${TGT}',
+      source=ctx.path.make_node(
+          'tessdata/{}.unicharambigs'.format(lang)
+          ),
+      target=ctx.path.get_bld().make_node(
+          '{}.unicharambigs'.format(lang)
+          ),
+      )
 
 
 """ From: https://code.google.com/p/tesseract-ocr/wiki/TrainingTesseract3
@@ -74,45 +165,49 @@ a single font.
 """
 def cat_per_font_trs(ctx):
   for font in ctx.env.EXP_FONTS:
-    tr_glob = '../train/documents/*/{}.{}.exp*.tr'.format(
+    tr_glob = 'train/documents/*/{}.{}.exp*.tr'.format(
         ctx.env.MODEL_LANG,
         font,
         )
-    image_glob = 'train/documents/*/{}.{}.exp*.{}'.format(
-        ctx.env.MODEL_LANG,
-        font,
-        ctx.env.IMAGE_EXT,
-        )
-    trs = [
-      '{}.tr'.format('.'.join(image.bldpath().split('.')[:-1]))
-      for image in ctx.path.ant_glob(image_glob)
-    ]
     ctx(
-        rule='cat {} > ${{TGT}}'.format(tr_glob),
-        source=trs,
-        target='train/{}.{}.exp.tr'.format(ctx.env.MODEL_LANG, font)
+        rule='${{CAT}} {} > ${{TGT}}'.format(tr_glob),
+        source=ctx.path.ant_glob(tr_glob),
+        target=ctx.path.get_bld().make_node(
+            'train/{}.{}.exp.tr'.format(ctx.env.MODEL_LANG, font)
+            ),
+        after=['trs'],
         )
 
 
-# unicharset_extractor lang.font.exp0.box [lang.font.exp1.box ...]
-def extract_unicharset(ctx):
-  globs = []
+def cat_meta_box(ctx):
   boxes = []
   for font in ctx.env.EXP_FONTS:
     box_glob = 'train/documents/*/{}.{}.exp*.box'.format(
         ctx.env.MODEL_LANG,
         font,
         )
-    globs.append('../' + box_glob)
     boxes.extend(ctx.path.ant_glob(box_glob))
-  # TODO: we probably need to create a meta-box file since with large
-  #  training sets the command line would be /very/ long
   ctx(
-      # rule='${UNICHARSET_EXTRACTOR} ${SRC}',
-      rule='${{UNICHARSET_EXTRACTOR}} {}'.format(' '.join(globs)),
+      rule=(
+          '${META_BOX}' +
+              '--docs ${bld.path.find_dir("train").abspath()}' +
+              '--lang ${MODEL_LANG}' +
+              '--output ${TGT}' +
+              '${EXP_FONTS}'
+          ),
       source=boxes,
-      # source=globs,
-      target='unicharset'
+      target=ctx.path.get_bld().make_node(
+          '{}.meta.box'.format(ctx.env.MODEL_LANG)
+          ),
+      shell=False,
+      )
+
+# unicharset_extractor lang.font.exp0.box [lang.font.exp1.box ...]
+def extract_unicharset(ctx):
+  ctx(
+      rule='${UNICHARSET_EXTRACTOR} ${SRC}',
+      source='{}.meta.box'.format(ctx.env.MODEL_LANG),
+      target='unicharset',
       )
 
 
@@ -130,15 +225,15 @@ def train_mf(ctx):
   ctx(
       rule=(
           '${MFTRAINING}' +
-              ' -F ${SRC[0]}' +
-              ' -U ${SRC[1]}' +
-              ' -O ${TGT[0]}' +
+              ' -F ${SRC[0].bldpath()}' +
+              ' -U ${SRC[1].bldpath()}' +
+              ' -O ${TGT[0].bldpath()}' +
               ' {}'.format(' '.join(trs))
               # ' {}'.format(' '.join([tr.bldpath() for tr in trs]))
               # ' ${SRC[2:]}'
             ),
       source=[
-          '{}.font_properties'.format(ctx.env.MODEL_LANG),
+          'tessdata/{}.font_properties'.format(ctx.env.MODEL_LANG),
           'unicharset',
           ] + trs,
       target=[
@@ -157,52 +252,43 @@ def train_cn(ctx):
   ctx(
       rule='${CNTRAINING} ${SRC}',
       source=trs,
-      target='normproto',
+      target=ctx.path.get_bld().make_node(
+          'normproto'
+          ),
       )
 
 
 def make_normproto_lang_specific(ctx):
   ctx(
-      rule='mv ${SRC} ${TGT}',
-      source='normproto',
-      target='{}.normproto'.format(ctx.env.MODEL_LANG),
+      rule='${MOVE} ${SRC} ${TGT}',
+      source=ctx.path.get_bld().make_node(
+          'normproto'
+          ),
+      target=ctx.path.get_bld().make_node(
+          '{}.normproto'.format(ctx.env.MODEL_LANG)
+          ),
       )
 
 def make_inttemp_lang_specific(ctx):
   ctx(
-      rule='mv ${SRC} ${TGT}',
-      source='inttemp',
-      target='{}.inttemp'.format(ctx.env.MODEL_LANG),
+      rule='${MOVE} ${SRC} ${TGT}',
+      source=ctx.path.get_bld().make_node(
+          'inttemp'
+          ),
+      target=ctx.path.get_bld().make_node(
+          '{}.inttemp'.format(ctx.env.MODEL_LANG)
+          ),
       )
 
 def make_pffmtable_lang_specific(ctx):
   ctx(
-      rule='mv ${SRC} ${TGT}',
-      source='pffmtable',
-      target='{}.pffmtable'.format(ctx.env.MODEL_LANG),
-      )
-
-
-def copy_in_config(ctx):
-  ctx(
-      rule='cp ${SRC} ${TGT}',
-      source='tessdata/jpn.config',
-      target='jpn.config',
-      )
-  ctx(
-      rule='cp ${SRC} ${TGT}',
-      source='tessdata/jpn.font_properties',
-      target='jpn.font_properties',
-      )
-  ctx(
-      rule='cp ${SRC} ${TGT}',
-      source='tessdata/jpn.punc-wordlist',
-      target='jpn.punc-wordlist',
-      )
-  ctx(
-      rule='cp ${SRC} ${TGT}',
-      source='tessdata/jpn.unicharambigs',
-      target='jpn.unicharambigs',
+      rule='${MOVE} ${SRC} ${TGT}',
+      source=ctx.path.get_bld().make_node(
+          'pffmtable'
+          ),
+      target=ctx.path.get_bld().make_node(
+          '{}.pffmtable'.format(ctx.env.MODEL_LANG)
+          ),
       )
 
 
@@ -211,7 +297,7 @@ def combine(ctx):
   ctx(
       rule='${COMBINE_TESSERACT} ${MODEL_LANG}.',
       source=[
-        '{}.config'.format(lang),
+        ctx.path.get_bld().make_node('{}.config'.format(lang)),
         '{}.font_properties'.format(lang),
         '{}.punc-wordlist'.format(lang),
         '{}.unicharambigs'.format(lang),
