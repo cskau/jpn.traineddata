@@ -74,8 +74,6 @@ def build(ctx):
   cat_meta_box(ctx)
   extract_unicharset(ctx)
 
-  create_dawgs(ctx)
-
   for font in ctx.env.EXP_FONTS:
     image_glob = 'train/documents/*/{}.{}.exp*.{}'.format(
         ctx.env.MODEL_LANG,
@@ -88,6 +86,8 @@ def build(ctx):
   train_mf(ctx)
 
   train_cn(ctx)
+
+  create_dawgs(ctx)
 
   make_normproto_lang_specific(ctx)
   make_inttemp_lang_specific(ctx)
