@@ -10,37 +10,11 @@ from waflib.Task import Task
 
 ### waf tools
 
-# TaskGen.declare_chain(
-#     name='touchtr',
-#     rule = 'touch ${TGT}',
-#     ext_in = ['.png', '.jpg', 'jpeg', '.tif', '.tiff'],
-#     # ext_out = '.tr',
-#     shell = False,
-#     reentrant = True,
-#     )
-
-# TaskGen.declare_chain(
-#     rule = '${TESSERACT} ${SRC} ${TGT[0].bld_base()} box.train.stderr',
-#     ext_in = ['.png', '.jpg', 'jpeg', '.tif', '.tiff'],
-#     ext_out = '.tr',
-#     shell = False,
-#     # reentrant = False,
-#     )
-
-# TaskGen.declare_chain(
-#     rule = (
-#         '${TESSERACT} "${SRC}" "${SRC[0].get_bld().bld_base()}" box.train.stderr ' +
-#             # HACK: force waf to create folder hierarchy
-#             ' #${SRC[0].get_bld().parent.mkdir()}'
-#         ),
-#     ext_in = ['.png', '.jpg', 'jpeg', '.tif', '.tiff'],
-#     # NOTE: no targets are set since tesseract might fail with: "Empty page!!"
-#     shell = True,
-#     )
-
 def box_scanner(task):
+  # touch .tr file as tessearct may fail to produce one
+  task.outputs[0].write('', 'w+')
+  #
   node = task.inputs[0]
-  # node.get_bld().parent.mkdir()
   dep = node.parent.find_resource(node.name.replace('.png', '.box'))
   if not dep:
     raise ValueError("Could not find the .box file for %r" % node)
@@ -112,8 +86,11 @@ def build(ctx):
   make_normproto_lang_specific(ctx)
   make_inttemp_lang_specific(ctx)
   make_pffmtable_lang_specific(ctx)
+  make_shapetable_lang_specific(ctx)
 
   combine(ctx)
+
+  move_traineddata_to_tessdata(ctx)
 
 
 def copy_in_config(ctx):
@@ -233,13 +210,14 @@ def train_mf(ctx):
               # ' ${SRC[2:]}'
             ),
       source=[
-          'tessdata/{}.font_properties'.format(ctx.env.MODEL_LANG),
+          '{}.font_properties'.format(ctx.env.MODEL_LANG),
           'unicharset',
           ] + trs,
       target=[
           '{}.unicharset'.format(ctx.env.MODEL_LANG),
           'inttemp',
           'pffmtable',
+          'shapetable', #?
           ]
       )
 
@@ -258,6 +236,7 @@ def train_cn(ctx):
       )
 
 
+#TODO: use symlinks instead so we dont have to train these files every build?
 def make_normproto_lang_specific(ctx):
   ctx(
       rule='${MOVE} ${SRC} ${TGT}',
@@ -291,18 +270,38 @@ def make_pffmtable_lang_specific(ctx):
           ),
       )
 
+def make_shapetable_lang_specific(ctx):
+  ctx(
+      rule='${MOVE} ${SRC} ${TGT}',
+      source=ctx.path.get_bld().make_node(
+          'shapetable'
+          ),
+      target=ctx.path.get_bld().make_node(
+          '{}.shapetable'.format(ctx.env.MODEL_LANG)
+          ),
+      )
+
 
 def combine(ctx):
   lang = ctx.env.MODEL_LANG
   ctx(
       rule='${COMBINE_TESSERACT} ${MODEL_LANG}.',
       source=[
-        ctx.path.get_bld().make_node('{}.config'.format(lang)),
-        '{}.font_properties'.format(lang),
-        '{}.punc-wordlist'.format(lang),
-        '{}.unicharambigs'.format(lang),
-        '{}.normproto'.format(lang),
-        '{}.inttemp'.format(lang),
-        '{}.pffmtable'.format(lang),
-      ]
+          ctx.path.get_bld().make_node('{}.config'.format(lang)),
+          '{}.font_properties'.format(lang),
+          '{}.punc-wordlist'.format(lang),
+          '{}.unicharambigs'.format(lang),
+          '{}.normproto'.format(lang),
+          '{}.inttemp'.format(lang),
+          '{}.pffmtable'.format(lang),
+          ],
+      target='{}.traineddata'.format(ctx.env.MODEL_LANG),
+      )
+
+
+def move_traineddata_to_tessdata(ctx):
+  ctx(
+      rule='${MOVE} ${SRC} ${TGT}',
+      source='{}.traineddata'.format(ctx.env.MODEL_LANG),
+      target='tessdata/{}.traineddata'.format(ctx.env.MODEL_LANG),
       )
