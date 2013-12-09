@@ -41,7 +41,8 @@ FONTS = [
   # ('TTF/DroidSansJapanese.ttf', 'DroidSansJapanese'),
 ]
 
-MARGIN=4
+MARGIN=8
+FONT_SIZE=18
 
 
 imagefont_cache = {}
@@ -77,6 +78,9 @@ def make_boxes(font_path, lines, margin=MARGIN):
 
 
 def write_boxes(dirpath, lang, font_name, exp, boxes):
+  image_width, image_height = calculate_image_size(
+      boxes,
+      margin=MARGIN)
   if boxes:
     box_dir = path.join('train', dirpath)
     box_filename = '{}.{}.exp{}.box'.format(lang, font_name, exp)
@@ -84,7 +88,13 @@ def write_boxes(dirpath, lang, font_name, exp, boxes):
     with open(path.join(box_dir, box_filename), 'w+') as box_file:
       for c, x, y, x2, y2 in boxes:
         box_file.write(
-            '{} {} {} {} {} 0\n'.format(c.encode('utf-8'), x, y, x2, y2)
+            '{} {} {} {} {} 0\n'.format(
+                c.encode('utf-8'),
+                x,
+                image_height - y2,
+                x2,
+                image_height - y,
+                )
             )
 
 
@@ -115,9 +125,9 @@ def draw_text_wand(dirpath, lang, font_name, exp, font_path, boxes, margin=MARGI
           background=bg,
           ) as image:
         draw.font = font_path
-        draw.font_size = 18
+        draw.font_size = FONT_SIZE
         for (c, x, y, x2, y2) in boxes:
-          draw.text(x, y+14, c.encode('utf-8'))
+          draw.text(x, (y + (FONT_SIZE - MARGIN), c.encode('utf-8'))
         draw(image)
         # print(img_path)
         image.save(filename=img_path)
@@ -172,7 +182,7 @@ if __name__ == '__main__':
 
   for font_file, font_name in FONTS:
     font_path = FONT_DIR + font_file
-    imagefont_cache[font_path] = ImageFont.truetype(font_path, 18)
+    imagefont_cache[font_path] = ImageFont.truetype(font_path, FONT_SIZE)
     glyph_cache[font_path] = {
         glyph.unicode: glyph
         for glyph in fontforge.open(font_path).glyphs()
