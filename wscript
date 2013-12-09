@@ -39,11 +39,13 @@ def configure(ctx):
   ctx.find_program('mv', var='MOVE')
   ctx.find_program('cp', var='COPY')
   ctx.find_program('cat', var='CAT')
+  ctx.find_program('ln', var='LINK')
   ctx.find_program('tesseract', var='TESSERACT')
   ctx.find_program('combine_tessdata', var='COMBINE_TESSERACT')
   ctx.find_program('unicharset_extractor', var='UNICHARSET_EXTRACTOR')
   ctx.find_program('mftraining', var='MFTRAINING')
   ctx.find_program('cntraining', var='CNTRAINING')
+  ctx.find_program('wordlist2dawg', var='WORDLIST2DAWG')
   ctx.find_program(
       'meta_box.py',
       var='META_BOX',
@@ -67,8 +69,12 @@ def configure(ctx):
 def build(ctx):
   copy_in_config(ctx)
 
+  create_dictionaries(ctx)
+
   cat_meta_box(ctx)
   extract_unicharset(ctx)
+
+  create_dawgs(ctx)
 
   for font in ctx.env.EXP_FONTS:
     image_glob = 'train/documents/*/{}.{}.exp*.{}'.format(
@@ -130,6 +136,53 @@ def copy_in_config(ctx):
       target=ctx.path.get_bld().make_node(
           '{}.unicharambigs'.format(lang)
           ),
+      )
+
+
+def create_dictionaries(ctx):
+  ctx(
+      rule='${COPY} ${SRC} ${TGT}',
+      source=[
+          'data/wiktionary',
+          ],
+      target=[
+          'frequent_words_list',
+          ],
+      )
+  ctx(
+      rule='${CAT} ${SRC} > ${TGT}',
+      source=[
+          'data/wiktionary',
+          'data/internet-jp.num',
+          'data/internet-jp-forms.num',
+          ],
+      target=[
+          'words_list',
+          ],
+      )
+
+
+def create_dawgs(ctx):
+  lang = ctx.env.MODEL_LANG
+  ctx(
+      rule='${WORDLIST2DAWG} ${SRC[0]} ${TGT} ${SRC[1]}',
+      source=[
+          'frequent_words_list',
+          '{}.unicharset'.format(lang),
+          ],
+      target=[
+          '{}.freq-dawg'.format(lang)
+          ],
+      )
+  ctx(
+      rule='${WORDLIST2DAWG} ${SRC[0]} ${TGT} ${SRC[1]}',
+      source=[
+          'words_list',
+          '{}.unicharset'.format(lang),
+          ],
+      target=[
+          '{}.word-dawg'.format(lang)
+          ],
       )
 
 
@@ -236,10 +289,9 @@ def train_cn(ctx):
       )
 
 
-#TODO: use symlinks instead so we dont have to train these files every build?
 def make_normproto_lang_specific(ctx):
   ctx(
-      rule='${MOVE} ${SRC} ${TGT}',
+      rule='${LINK} -s ${SRC} ${TGT}',
       source=ctx.path.get_bld().make_node(
           'normproto'
           ),
@@ -250,7 +302,7 @@ def make_normproto_lang_specific(ctx):
 
 def make_inttemp_lang_specific(ctx):
   ctx(
-      rule='${MOVE} ${SRC} ${TGT}',
+      rule='${LINK} -s ${SRC} ${TGT}',
       source=ctx.path.get_bld().make_node(
           'inttemp'
           ),
@@ -261,7 +313,7 @@ def make_inttemp_lang_specific(ctx):
 
 def make_pffmtable_lang_specific(ctx):
   ctx(
-      rule='${MOVE} ${SRC} ${TGT}',
+      rule='${LINK} -s ${SRC} ${TGT}',
       source=ctx.path.get_bld().make_node(
           'pffmtable'
           ),
@@ -272,7 +324,7 @@ def make_pffmtable_lang_specific(ctx):
 
 def make_shapetable_lang_specific(ctx):
   ctx(
-      rule='${MOVE} ${SRC} ${TGT}',
+      rule='${LINK} -s ${SRC} ${TGT}',
       source=ctx.path.get_bld().make_node(
           'shapetable'
           ),
@@ -294,6 +346,8 @@ def combine(ctx):
           '{}.normproto'.format(lang),
           '{}.inttemp'.format(lang),
           '{}.pffmtable'.format(lang),
+          '{}.freq-dawg'.format(lang),
+          '{}.word-dawg'.format(lang),
           ],
       target='{}.traineddata'.format(ctx.env.MODEL_LANG),
       )
