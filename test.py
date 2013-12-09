@@ -34,7 +34,7 @@ def word_error_rate(ground_truth, estimate):
   return matrix[w][h]
 
 
-def run_tesseract(image_path, lang=path.join('..', 'jpn'), prefix='build/'):
+def run_tesseract(image_path, lang='jpn', prefix='build/'):
   env = environ.copy()
   if prefix:
     env['TESSDATA_PREFIX'] = prefix
@@ -55,6 +55,7 @@ def run_tesseract(image_path, lang=path.join('..', 'jpn'), prefix='build/'):
 
 
 def test(lang, prefix):
+  wers = []
   wer_acc = 0
   for (dirpath, dirnames, filenames) in walk(TEST_DIR):
     for filename in filenames:
@@ -64,9 +65,9 @@ def test(lang, prefix):
         ocr_path = '{}png.ocr.txt'.format(file_path[:-3])
         if path.exists(image_path):
           stdout, stderr = run_tesseract(image_path, lang, prefix)
-          # if stderr:
-          #   print(stderr.decode())
-          #   exit(1)
+          if stderr:
+            print(stderr.decode())
+            # exit(1)
           text_content = ''
           with open(file_path) as text_file:
             text_content = text_file.read()
@@ -74,9 +75,11 @@ def test(lang, prefix):
           with open(ocr_path) as text_file:
             ocr_content = text_file.read()
           wer = word_error_rate(text_content, ocr_content)
+          wers.append((wer, image_path))
           wer_acc += wer
-          print('{:>4} : {}'.format(wer, image_path))
   # summary
+  for wer, image_path in wers:
+    print('{:>4} : {}'.format(wer, image_path))
   print('==========='.format(wer_acc))
   print('{:>4}'.format(wer_acc))
 
@@ -90,7 +93,7 @@ def parse_args():
       metavar='l',
       type=str,
       nargs='?',
-      default='../jpn',
+      default='jpn',
       help='lang.traineddata',
       )
   parser.add_argument(
@@ -112,6 +115,6 @@ def parse_args():
 if __name__ == '__main__':
   args = parse_args()
   test(
-      lang=args.lang if not args.builtin else 'jpn',
+      lang=args.lang,
       prefix=args.prefix if not args.builtin else None,
       )
