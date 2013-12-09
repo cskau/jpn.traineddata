@@ -12,10 +12,38 @@ import numpy
 TEST_DIR='test'
 
 
-def word_error_rate(ground_truth, estimate):
+def word_error_rate(substitutions, insertions, deletions, n):
+  return (substitutions + insertions + deletions) / n
+
+
+def backtrack(matrix):
+  i, j = (lambda wh: (wh[0]-1, wh[1]-1))(matrix.shape)
+  wer = matrix[i][j]
+  substitutions, insertions, deletions = 0, 0, 0
+  while i > 0 or j > 0:
+    if i > 0 and j > 0 and matrix[i-1][j-1] < matrix[i][j]:
+      i -= 1
+      j -= 1
+      substitutions += 1
+    elif j > 0 and matrix[i][j-1] < matrix[i][j]:
+      j -= 1
+      insertions += 1
+    elif i > 0 and matrix[i-1][j] < matrix[i][j]:
+      i -= 1
+      deletions += 1
+    else:
+      i -= 1
+      j -= 1
+
+  return (substitutions, insertions, deletions)
+
+
+def create_word_matrix(ground_truth, estimate):
   w = len(ground_truth)
   h = len(estimate)
+
   matrix = numpy.zeros(((w+1), (h+1)), dtype=numpy.uint16)
+
   for i in range(w+1):
     for j in range(h+1):
       if i == 0:
@@ -31,7 +59,7 @@ def word_error_rate(ground_truth, estimate):
             matrix[i-1][j], # deletion
             )
 
-  return matrix[w][h]
+  return matrix
 
 
 def run_tesseract(image_path, lang='jpn', prefix='build/'):
@@ -54,9 +82,8 @@ def run_tesseract(image_path, lang='jpn', prefix='build/'):
   return stdout, stderr
 
 
-def test(lang, prefix):
-  wers = []
-  wer_acc = 0
+def run_all_tests(lang, prefix):
+  test_results = []
   for (dirpath, dirnames, filenames) in walk(TEST_DIR):
     for filename in filenames:
       if filename.endswith('txt'):
@@ -64,8 +91,9 @@ def test(lang, prefix):
         image_path = '{}png'.format(file_path[:-3])
         ocr_path = '{}png.ocr.txt'.format(file_path[:-3])
         if path.exists(image_path):
+          print(image_path)
           stdout, stderr = run_tesseract(image_path, lang, prefix)
-          if stderr:
+          if stderr: # TODO
             print(stderr.decode())
             # exit(1)
           text_content = ''
@@ -74,14 +102,32 @@ def test(lang, prefix):
           ocr_content = ''
           with open(ocr_path) as text_file:
             ocr_content = text_file.read()
-          wer = word_error_rate(text_content, ocr_content)
-          wers.append((wer, image_path))
-          wer_acc += wer
-  # summary
-  for wer, image_path in wers:
-    print('{:>4} : {}'.format(wer, image_path))
-  print('==========='.format(wer_acc))
-  print('{:>4}'.format(wer_acc))
+          test_results.append((image_path, text_content, ocr_content))
+  return test_results
+
+
+def get_pair_numbers(pairs):
+  pair_numbers = []
+  for label, expected, actual in pairs:
+    word_matrix = create_word_matrix(expected, actual)
+    s, i, d = backtrack(word_matrix)
+    pair_numbers.append((label, s, i, d, word_matrix.shape[0]))
+  return pair_numbers
+
+
+def print_werewolves(pair_numbers):
+  print('   WER    Sub    Ins    Del  File')
+  S, I, D, N = 0, 0, 0, 0
+  for label, s, i, d, n in pair_numbers:
+    print('{:6.2f}  {:>5}  {:>5}  {:>5}  {:<}'.format(
+        word_error_rate(s, i, d, n), s, i, d, label))
+    S += s
+    I += i
+    D += d
+    N += n
+  print('==============================================')
+  print('{:6.2f}  {:>5}  {:>5}  {:>5}'.format(
+      word_error_rate(S, I, D, N), S, I, D))
 
 
 def parse_args():
@@ -114,7 +160,9 @@ def parse_args():
 
 if __name__ == '__main__':
   args = parse_args()
-  test(
+  test_results = run_all_tests(
       lang=args.lang,
       prefix=args.prefix if not args.builtin else None,
       )
+  pair_numbers = get_pair_numbers(test_results)
+  print_werewolves(pair_numbers)
